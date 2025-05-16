@@ -1,6 +1,8 @@
-streamlit>=1.25
-pandas>=1.5
-openpyxl>=3.1
-folium>=0.14
-streamlit-folium>=0.12
-plotly>=5.18
+streamlit
+pandas
+openpyxl
+folium
+streamlit-folium
+seaborn
+matplotlib
+requests
