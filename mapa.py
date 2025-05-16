@@ -9,6 +9,7 @@ import matplotlib.ticker as mtick
 from io import BytesIO
 import requests
 import os
+import re
 
 # ------------------------
 # FUNCIONES
@@ -18,6 +19,11 @@ def normalizar(texto):
     texto = str(texto).strip().lower()
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
     return texto
+
+def limpiar_nombre(texto):
+    texto = normalizar(texto)
+    texto = re.sub(r'[^a-z0-9_]+', '_', texto)
+    return texto.strip('_')
 
 def cargar_datos(ruta):
     df = pd.read_excel(ruta, sheet_name=1)
@@ -84,9 +90,13 @@ try:
         st.subheader("🗺️ Mapa georreferenciado")
         st_folium(mapa, width=1200, height=700)
 
-        # ================================
-        # FRECUENCIA + GRAFICO ESTÁTICO
-        # ================================
+        # Leyenda de colores
+        with st.expander("🎨 Ver leyenda de colores"):
+            for clave, color in mapa_colores.items():
+                st.markdown(f'<div style="display:inline-block;width:15px;height:15px;background:{color};margin-right:10px;border-radius:50%;"></div>{clave}',
+                            unsafe_allow_html=True)
+
+        # Gráfico de frecuencias
         st.subheader("📊 Gráfico de frecuencias (estático)")
 
         df_filtrado[variable] = df_filtrado[variable].astype(str).apply(normalizar)
@@ -94,13 +104,18 @@ try:
         frecuencia.columns = ['Respuesta', 'Frecuencia']
         frecuencia['Porcentaje (%)'] = (frecuencia['Frecuencia'] / frecuencia['Frecuencia'].sum() * 100).round(1)
 
-        # Crear carpeta si no existe
+        # Nombre de archivo limpio
+        nombre_archivo_limpio = limpiar_nombre(variable)
         os.makedirs("graficos_exportados", exist_ok=True)
-        filename_base = f'graficos_exportados/frecuencia_{variable.replace(" ", "_")}'
+        filename_base = f'graficos_exportados/frecuencia_{nombre_archivo_limpio}'
+
+        # Colores ordenados para gráfico
+        respuestas_ordenadas = frecuencia['Respuesta'].tolist()
+        colores_ordenados = [mapa_colores.get(valor, '#999999') for valor in respuestas_ordenadas]
 
         fig, ax = plt.subplots(figsize=(max(10, len(frecuencia) * 0.6), 6))
         sns.set_theme(style="whitegrid", font_scale=1.1)
-        sns.barplot(data=frecuencia, x='Respuesta', y='Frecuencia', ax=ax, palette="colorblind")
+        sns.barplot(data=frecuencia, x='Respuesta', y='Frecuencia', ax=ax, palette=colores_ordenados)
 
         for i, row in frecuencia.iterrows():
             ax.text(i, row['Frecuencia'] + 0.5, f"{int(row['Frecuencia'])}", ha='center', va='bottom', fontsize=10)
@@ -116,20 +131,18 @@ try:
         plt.tight_layout()
         st.pyplot(fig)
 
-        # Guardar como imagen y PDF
+        # Guardar gráfico
         fig.savefig(f"{filename_base}.png", dpi=300, bbox_inches='tight')
         fig.savefig(f"{filename_base}.pdf", dpi=300, bbox_inches='tight')
 
-        # ================================
-        # DESCARGAS
-        # ================================
+        # Botones de descarga
         st.subheader("📤 Descargas")
 
         with open(f"{filename_base}.png", "rb") as fimg:
             st.download_button(
                 label="📸 Descargar gráfico como PNG",
                 data=fimg,
-                file_name=os.path.basename(f"{filename_base}.png"),
+                file_name=f'frecuencia_{variable}.png',
                 mime="image/png"
             )
 
@@ -137,13 +150,19 @@ try:
             st.download_button(
                 label="📄 Descargar gráfico como PDF",
                 data=fpdf,
-                file_name=os.path.basename(f"{filename_base}.pdf"),
+                file_name=f'frecuencia_{variable}.pdf',
                 mime="application/pdf"
             )
 
-        # ================================
-        # TABLA DE FRECUENCIA
-        # ================================
+        csv = frecuencia.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇️ Descargar tabla como CSV",
+            data=csv,
+            file_name=f'frecuencia_{variable}.csv',
+            mime='text/csv'
+        )
+
+        # Tabla formateada
         st.subheader("📄 Tabla de frecuencia con porcentaje")
         st.dataframe(
             frecuencia.style
@@ -153,15 +172,6 @@ try:
                     {'selector': 'td', 'props': [('font-size', '11pt')]},
                 ]),
             use_container_width=True
-        )
-
-        # Descargar CSV
-        csv = frecuencia.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Descargar tabla como CSV",
-            data=csv,
-            file_name=f'frecuencia_{variable.replace(" ", "_")}.csv',
-            mime='text/csv'
         )
 
 except Exception as e:
