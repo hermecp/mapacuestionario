@@ -3,7 +3,12 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import unicodedata
-import plotly.express as px
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.ticker as mtick
+from io import BytesIO
+import requests
+import os
 
 # ------------------------
 # FUNCIONES
@@ -26,8 +31,8 @@ def generar_mapa(df, columna):
     df[columna] = df[columna].astype(str).apply(normalizar)
 
     valores = df[columna].unique()
-    colores = px.colors.qualitative.Plotly + px.colors.qualitative.Dark24
-    mapa_colores = dict(zip(valores, colores * 5))
+    colores = sns.color_palette("tab20", len(valores)).as_hex()
+    mapa_colores = dict(zip(valores, colores))
 
     mapa = folium.Map(location=[17.0257, -96.7353], zoom_start=15)
 
@@ -53,12 +58,15 @@ def generar_mapa(df, columna):
 # ------------------------
 
 st.set_page_config(layout="wide")
-st.title("📍 Mapa y análisis interactivo de variables del cuestionario")
+st.title("📍 Mapa y análisis de variables del cuestionario")
 
-ruta_local = "https://raw.githubusercontent.com/hermecp/mapacuestionario/main/Encuesta%20DHA.xlsx"
+# URL del Excel en GitHub
+url_excel = "https://raw.githubusercontent.com/hermecp/mapacuestionario/main/Encuesta%20DHA.xlsx"
 
 try:
-    df = cargar_datos(ruta_local)
+    response = requests.get(url_excel)
+    response.raise_for_status()
+    df = cargar_datos(BytesIO(response.content))
 
     columnas_excluir = [
         'start', 'end', 'start-geopoint', '_start-geopoint_latitude', '_start-geopoint_longitude',
@@ -76,34 +84,78 @@ try:
         st.subheader("🗺️ Mapa georreferenciado")
         st_folium(mapa, width=1200, height=700)
 
-        # 📊 Gráfico y tabla
-        st.subheader("📊 Gráfico interactivo de frecuencias")
+        # ================================
+        # FRECUENCIA + GRAFICO ESTÁTICO
+        # ================================
+        st.subheader("📊 Gráfico de frecuencias (estático)")
+
         df_filtrado[variable] = df_filtrado[variable].astype(str).apply(normalizar)
-        frecuencia = df_filtrado[variable].value_counts().reset_index()
+        frecuencia = df_filtrado[variable].value_counts().sort_index().reset_index()
         frecuencia.columns = ['Respuesta', 'Frecuencia']
-        total = frecuencia['Frecuencia'].sum()
-        frecuencia['Porcentaje (%)'] = (frecuencia['Frecuencia'] / total * 100).round(1)
+        frecuencia['Porcentaje (%)'] = (frecuencia['Frecuencia'] / frecuencia['Frecuencia'].sum() * 100).round(1)
 
-        fig = px.bar(
-            frecuencia,
-            x='Respuesta',
-            y='Frecuencia',
-            color='Respuesta',
-            color_discrete_map=mapa_colores,
-            title=f'Distribución de respuestas para: {variable}',
-            labels={'Frecuencia': 'Número de viviendas'}
-        )
-        fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        # Crear carpeta si no existe
+        os.makedirs("graficos_exportados", exist_ok=True)
+        filename_base = f'graficos_exportados/frecuencia_{variable.replace(" ", "_")}'
 
-        # 📄 Tabla de frecuencia
+        fig, ax = plt.subplots(figsize=(max(10, len(frecuencia) * 0.6), 6))
+        sns.set_theme(style="whitegrid", font_scale=1.1)
+        sns.barplot(data=frecuencia, x='Respuesta', y='Frecuencia', ax=ax, palette="colorblind")
+
+        for i, row in frecuencia.iterrows():
+            ax.text(i, row['Frecuencia'] + 0.5, f"{int(row['Frecuencia'])}", ha='center', va='bottom', fontsize=10)
+
+        ax.set_title(f'Distribución de respuestas: {variable}', fontsize=16, weight='bold')
+        ax.set_xlabel('')
+        ax.set_ylabel('Número de viviendas', fontsize=12)
+        ax.set_xticklabels(frecuencia['Respuesta'], rotation=45, ha='right')
+        ax.yaxis.set_major_locator(mtick.MaxNLocator(integer=True))
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # Guardar como imagen y PDF
+        fig.savefig(f"{filename_base}.png", dpi=300, bbox_inches='tight')
+        fig.savefig(f"{filename_base}.pdf", dpi=300, bbox_inches='tight')
+
+        # ================================
+        # DESCARGAS
+        # ================================
+        st.subheader("📤 Descargas")
+
+        with open(f"{filename_base}.png", "rb") as fimg:
+            st.download_button(
+                label="📸 Descargar gráfico como PNG",
+                data=fimg,
+                file_name=os.path.basename(f"{filename_base}.png"),
+                mime="image/png"
+            )
+
+        with open(f"{filename_base}.pdf", "rb") as fpdf:
+            st.download_button(
+                label="📄 Descargar gráfico como PDF",
+                data=fpdf,
+                file_name=os.path.basename(f"{filename_base}.pdf"),
+                mime="application/pdf"
+            )
+
+        # ================================
+        # TABLA DE FRECUENCIA
+        # ================================
         st.subheader("📄 Tabla de frecuencia con porcentaje")
         st.dataframe(
-            frecuencia.style.format({'Frecuencia': '{:.0f}', 'Porcentaje (%)': '{:.1f}'}),
+            frecuencia.style
+                .format({'Frecuencia': '{:.0f}', 'Porcentaje (%)': '{:.1f}'})
+                .set_table_styles([
+                    {'selector': 'th', 'props': [('font-size', '12pt'), ('text-align', 'center')]},
+                    {'selector': 'td', 'props': [('font-size', '11pt')]},
+                ]),
             use_container_width=True
         )
 
-        # ⬇️ Descargar CSV
+        # Descargar CSV
         csv = frecuencia.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="⬇️ Descargar tabla como CSV",
