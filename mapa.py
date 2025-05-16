@@ -55,7 +55,7 @@ def generar_mapa(df, columna):
 st.set_page_config(layout="wide")
 st.title("📍 Mapa y análisis interactivo de variables del cuestionario")
 
-ruta_local = '/home/lando/Documentos/REU 2025/Encuesta DHA.xlsx'
+ruta_local = "https://raw.githubusercontent.com/hermecp/mapacuestionario/main/Encuesta%20DHA.xlsx"
 
 try:
     df = cargar_datos(ruta_local)
