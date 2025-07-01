@@ -17,6 +17,7 @@ import re
 
 def normalizar(texto):
     texto = str(texto).strip().lower()
+    texto = texto.replace('–', '-').replace('—', '-')  # Reemplazar guiones largos por guion simple
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
     return texto
 
@@ -90,13 +91,11 @@ try:
         st.subheader("🗺️ Mapa georreferenciado")
         st_folium(mapa, width=1200, height=700)
 
-        # Leyenda de colores
         with st.expander("🎨 Ver leyenda de colores"):
             for clave, color in mapa_colores.items():
                 st.markdown(f'<div style="display:inline-block;width:15px;height:15px;background:{color};margin-right:10px;border-radius:50%;"></div>{clave}',
                             unsafe_allow_html=True)
 
-        # Gráfico de frecuencias
         st.subheader("📊 Gráfico de frecuencias (estático)")
 
         df_filtrado[variable] = df_filtrado[variable].astype(str).apply(normalizar)
@@ -104,12 +103,10 @@ try:
         frecuencia.columns = ['Respuesta', 'Frecuencia']
         frecuencia['Porcentaje (%)'] = (frecuencia['Frecuencia'] / frecuencia['Frecuencia'].sum() * 100).round(1)
 
-        # Nombre de archivo limpio
         nombre_archivo_limpio = limpiar_nombre(variable)
         os.makedirs("graficos_exportados", exist_ok=True)
         filename_base = f'graficos_exportados/frecuencia_{nombre_archivo_limpio}'
 
-        # Colores ordenados para gráfico
         respuestas_ordenadas = frecuencia['Respuesta'].tolist()
         colores_ordenados = [mapa_colores.get(valor, '#999999') for valor in respuestas_ordenadas]
 
@@ -131,11 +128,9 @@ try:
         plt.tight_layout()
         st.pyplot(fig)
 
-        # Guardar gráfico
         fig.savefig(f"{filename_base}.png", dpi=300, bbox_inches='tight')
         fig.savefig(f"{filename_base}.pdf", dpi=300, bbox_inches='tight')
 
-        # Botones de descarga
         st.subheader("📤 Descargas")
 
         with open(f"{filename_base}.png", "rb") as fimg:
@@ -162,7 +157,6 @@ try:
             mime='text/csv'
         )
 
-        # Tabla formateada
         st.subheader("📄 Tabla de frecuencia con porcentaje")
         st.dataframe(
             frecuencia.style
